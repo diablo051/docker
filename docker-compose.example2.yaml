@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: postgres:12
+    container_name: postgres
+    environment:
+      - POSTGRES_HOST=
+      - POSTGRES_USER=
+      - POSTGRES_PORT=
+      - POSTGRES_DB=
+      - POSTGRES_PASSWORD=
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    expose:
+      - 5432
+    networks:
+      network:
+        ipv4_address: 172.18.1.5
+
+  nginx:
+    image: nginx
+    container_name: 
+    volumes:
+      - /app/nginx-settings/load-balancer:/etc/nginx
+      - /etc/letsencrypt:/etc/letsencrypt
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      network:
+        ipv4_address: 172.18.1.4
+    depends_on:
+      - postgres
+
+  redis:
+    image: redis
+    container_name: redis
+    expose:
+      - 6379
+    networks:
+      network:
+        ipv4_address: 172.18.1.6
+    depends_on:
+      - postgres
+
+
+volumes:
+  postgres_data:
+
+networks:
+  network:
+    name: infra_network
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.18.1.0/24
