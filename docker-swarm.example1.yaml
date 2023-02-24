@@ -1,0 +1,114 @@
+services:
+  django:
+    image: "eantdz/noted:${COMMIT_HASH}"
+    env_file:
+      - .env-noted
+    volumes:
+      - site:/noted
+      - media:/noted/media
+      - logs:/noted/logs
+    command: >
+      /bin/bash -c "cd noted \
+                      python manage.py makemigrate --settings=core.settings.prodaction \
+                      python manage.py collectstatic --noinput --settings=core.settings.prodaction \
+                      gunicorn core.wsgi:application --bind 0.0.0.0:8000"
+    deploy:
+      placement:
+        constraints:
+          - "node.labels.TYPE==master"
+      replicas: 1
+      update_config:
+        parallelism: 1
+        order: start-first
+        failure_action: rollback
+        delay: 10s
+      rollback_config:
+        parallelism: 0
+        order: stop-first
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - prod_network
+
+  celery_beat:
+    image: "eantdz/noted:${COMMIT_HASH}"
+    command: >
+      /bin/bash -c "cd noted && celery -A core beat --loglevel=info --logfile=/noted/logs/celery_beat.log"
+    env_file:
+      - .env-noted
+    volumes:
+      - site:/noted
+      - logs:/noted/logs
+    deploy:
+      replicas: 1
+    depends_on:
+      - django
+    networks:
+      - prod_network
+
+  celery_worker:
+    image: "eantdz/noted:${COMMIT_HASH}"
+    command: >
+      /bin/bash -c "cd noted && celery -A core worker -E --loglevel=info --logfile=/noted/logs/celery_worker.log"
+    env_file:
+      - .env-noted
+    volumes:
+      - site:/noted
+      - logs:/noted/logs
+    deploy:
+      replicas: 1
+    depends_on:
+      - django
+    networks:
+      - prod_network
+
+  postgres:
+    image: postgres:12.0
+    env_file:
+      - .env-db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    deploy:
+      placement:
+        constraints:
+          - "node.labels.TYPE==master"
+      replicas: 1
+    networks:
+      - prod_network
+
+  gateway:
+    image: nginx
+    ports:
+      - "8080:80"
+    volumes:
+      - /app/nginx-settings/noted_gateway:/etc/nginx/conf.d
+      - site:/noted
+      - media:/noted/media
+    deploy:
+      placement:
+        constraints:
+          - "node.labels.TYPE==master"
+      replicas: 1
+    networks:
+      - prod_network
+
+  redis:
+    image: redis
+    deploy:
+      replicas: 1
+    depends_on:
+      - postgres
+    networks:
+      - prod_network
+
+volumes:
+  postgres_data:
+  site:
+  media:
+  logs:
+
+networks:
+  prod_network:
+    driver: overlay
+    attachable: true
